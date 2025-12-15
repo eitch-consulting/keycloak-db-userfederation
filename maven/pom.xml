@@ -5,7 +5,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.kewt</groupId>
 	<artifactId>keycloak-db-userfederation</artifactId>
-	<version>0.0.1</version>
+	<version>1.0.1</version>
 	<name>Keycloak DB User Federation</name>
 	<url>http://maven.apache.org</url>
 	
@@ -74,7 +74,7 @@
 	</dependencies>
 	
 	<build>
-		<finalName>keycloak-db-userfederation</finalName>
+		<finalName>keycloak-db-userfederation-${project.version}</finalName>
 		<plugins>
 			<plugin>
 				<artifactId>maven-dependency-plugin</artifactId>
