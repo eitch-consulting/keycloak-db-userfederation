@@ -5,7 +5,7 @@ A provider to create/read/update users from a database
 
 ```
 docker compose build
-docker compose run maven
+docker compose run --rm maven
 ```
 
 ## Installing

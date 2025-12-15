@@ -17,16 +17,20 @@ import org.keycloak.component.ComponentModel;
 import org.keycloak.credential.CredentialInput;
 import org.keycloak.credential.CredentialInputUpdater;
 import org.keycloak.credential.CredentialInputValidator;
+import org.keycloak.credential.CredentialProvider;
+import org.keycloak.credential.PasswordCredentialProviderFactory;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.ModelException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserCredentialModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.credential.PasswordCredentialModel;
+import org.keycloak.policy.PasswordPolicyManagerProvider;
+import org.keycloak.policy.PolicyError;
 import org.keycloak.storage.UserStoragePrivateUtil;
 import org.keycloak.storage.UserStorageProvider;
 import org.keycloak.storage.user.ImportedUserValidation;
-import org.keycloak.storage.user.UserCountMethodsProvider;
 import org.keycloak.storage.user.UserLookupProvider;
 import org.keycloak.storage.user.UserQueryProvider;
 import org.keycloak.storage.user.UserRegistrationProvider;
@@ -38,7 +42,6 @@ public class DBFederationProvider
 		UserStorageProvider,
 		UserLookupProvider,
 		UserRegistrationProvider,
-		UserCountMethodsProvider,
 		UserQueryProvider,
 		ImportedUserValidation,
 		CredentialInputValidator,
@@ -261,29 +264,52 @@ public class DBFederationProvider
 	public boolean updateCredential(RealmModel realm, UserModel user, CredentialInput input) {
 		LOGGER.debugv("updateCredential: {0}", user.getUsername());
 		
- 		if (isSyncWriteMode()) {
- 			if (!(input instanceof UserCredentialModel)) {
- 				return false;
- 			}
- 	        if (!input.getType().equals(PasswordCredentialModel.TYPE)) {
- 	        	return false;
- 	        }
- 	        Integer databaseId = getDatabaseId(user);
- 			if (databaseId == null) {
- 				return false;
- 			}
- 	        UserCredentialModel credential = (UserCredentialModel) input;
- 	        // String salt = model.get(DBFederationConstants.CONFIG_SALT);
- 	        PasswordHashFunction hash = PasswordHashFunction.getById(model.get(DBFederationConstants.CONFIG_PASSWORD_HASH_FUNCTION));
- 			String hashedPassword = hash.digest(credential.getValue(), model);
- 	        DatabaseUser databaseUser = userRepository.getUserById(databaseId);
- 	        if (databaseUser == null) {
- 	        	return false;
- 	        }
- 	        return userRepository.updatePassword(databaseUser.getId(), hashedPassword);
- 		} else {
- 			throw new IllegalArgumentException("Cannot change password in READONLY mode");
+ 		if (!isSyncWriteMode()) {
+			throw new ModelException("user-federation-provider.error.cantChangePasswordInReadMode");
+		}
+ 		if (!(input instanceof UserCredentialModel)) {
+ 			return false;
  		}
+		if (!input.getType().equals(PasswordCredentialModel.TYPE)) {
+			return false;
+		}
+		Integer databaseId = getDatabaseId(user);
+		if (databaseId == null) {
+			return false;
+		}
+		
+		// Enforce password policies
+ 	    UserCredentialModel credential = (UserCredentialModel) input;
+		String password = credential.getValue();
+		boolean validatePassword = model.get(DBFederationConstants.VALIDATE_PASSWORD, false);
+		if (validatePassword) {
+			PolicyError error = session.getProvider(PasswordPolicyManagerProvider.class).validate(realm, user, password);
+			if (error != null) {
+				throw new ModelException(error.getMessage(), error.getParameters());
+			}
+		}
+
+		// Hash and store password in external database
+		PasswordHashFunction hash = PasswordHashFunction.getById(model.get(DBFederationConstants.CONFIG_PASSWORD_HASH_FUNCTION));
+		String hashedPassword = hash.digest(password, model);
+		DatabaseUser databaseUser = userRepository.getUserById(databaseId);
+		if (databaseUser == null) {
+			return false;
+		}
+		boolean updated = userRepository.updatePassword(databaseUser.getId(), hashedPassword);
+		if (!updated) {
+			return false;
+		}
+
+		// Also store password in keycloak history
+		if (validatePassword) {
+			CredentialProvider<?> passwordProvider = session.getProvider(CredentialProvider.class, PasswordCredentialProviderFactory.PROVIDER_ID);
+			if (passwordProvider instanceof CredentialInputUpdater) {
+				((CredentialInputUpdater) passwordProvider).updateCredential(realm, user, input);
+			}
+		}
+
+		return true;
 	}
 
 	@Override
@@ -304,7 +330,7 @@ public class DBFederationProvider
 	        }
 	        userRepository.updatePassword(databaseUser.getId(), "");
  		} else {
- 			throw new IllegalArgumentException("Cannot reset password in READONLY mode");
+ 			throw new ModelException("user-federation-provider.error.cantChangePasswordInReadMode");
  		}
 	}
 

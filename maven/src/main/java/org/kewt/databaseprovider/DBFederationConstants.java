@@ -36,6 +36,8 @@ public class DBFederationConstants {
 	public static final String CONFIG_PBKDF2_SALT_LENGTH = "pbkdf2_salt_length";
 	
 	public static final String CONFIG_PBKDF2_ITERATIONS  = "pbkdf2_iterations";
+
+	public static final String VALIDATE_PASSWORD  = "validate_password";
 	
 	public static final String CONFIG_SYNC_MODE  = "sync_mode";
 	

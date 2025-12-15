@@ -153,6 +153,13 @@ public class DBFederationProviderFactory implements UserStorageProviderFactory<D
 				.defaultValue(300000)
 				.add()
 			.property()
+				.name(DBFederationConstants.VALIDATE_PASSWORD)
+				.label("user-federation-provider.db.validatePassword")
+				.helpText("user-federation-provider.db.validatePasswordHelp")
+				.type(ProviderConfigProperty.BOOLEAN_TYPE)
+				.defaultValue(false)
+				.add()
+			.property()
 				.name(DBFederationConstants.CONFIG_SYNC_MODE)
 				.label("user-federation-provider.db.syncMode")
 				.helpText("user-federation-provider.db.syncModeHelp")
@@ -227,6 +234,9 @@ public class DBFederationProviderFactory implements UserStorageProviderFactory<D
 		try (DatabaseConnection connection = createConnection(model, false)) {
 			DatabaseUserRepository userRepository = new DatabaseUserRepository(connection, model);
 			databaseUsers = userRepository.listUsers();
+		} catch (Exception e) {
+			LOGGER.error("Error listing users from database", e);
+			throw e;
 		}
 			
         for (DatabaseUser user : databaseUsers) {

@@ -1,12 +1,4 @@
-FROM eclipse-temurin:17-jdk-alpine
-
-# install maven
-RUN \
-	wget https://dlcdn.apache.org/maven/maven-3/3.9.6/binaries/apache-maven-3.9.6-bin.tar.gz -O /opt/apache-maven-3.9.6-bin.tar.gz && \
-	tar xzf /opt/apache-maven-3.9.6-bin.tar.gz -C /opt/ && \
-	ln -s /opt/apache-maven-3.9.6 /opt/maven && \
-	rm -f /opt/apache-maven-3.9.6-bin.tar.gz
-ENV PATH="/opt/maven/bin:$PATH"
+FROM maven:3.9-eclipse-temurin-17-alpine
 
 # set keycloak-db-userfederation directories
 RUN mkdir -p /opt/keycloak-db-userfederation
