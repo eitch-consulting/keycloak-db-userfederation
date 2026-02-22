@@ -1,21 +1,32 @@
 package org.kewt.databaseprovider.repository;
 
+import java.io.IOException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
+import java.sql.Types;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.lang3.ObjectUtils;
+import org.jboss.logging.Logger;
 import org.kewt.databaseprovider.DBFederationConstants;
 import org.kewt.databaseprovider.database.DatabaseConnection;
 import org.kewt.databaseprovider.database.callbacks.QueryReader;
 import org.kewt.databaseprovider.model.DatabaseUser;
+import org.kewt.databaseprovider.utils.Pair;
 import org.keycloak.component.ComponentModel;
+import org.keycloak.util.JsonSerialization;
 
 public class DatabaseUserRepository {
-	
+
+	protected static final Logger LOGGER = Logger.getLogger(DatabaseUserRepository.class);
+
 	private DatabaseConnection connection;
 	
 	private ComponentModel model;
@@ -34,7 +45,11 @@ public class DatabaseUserRepository {
 	
 	private String passwordColumn;
 	
+	private Map<String, Integer> columnTypes;
+	
 	private QueryReader<DatabaseUser> reader;
+	
+	private Map<String, String> attributeMapping;
 	
 	public DatabaseUserRepository(DatabaseConnection connection, ComponentModel model) {
 		this.connection = connection;
@@ -46,6 +61,29 @@ public class DatabaseUserRepository {
 		this.firstNameColumn = ObjectUtils.firstNonNull(this.model.get(DBFederationConstants.CONFIG_FIRSTNAME_COLUMN), "first_name");
 		this.lastNameColumn = ObjectUtils.firstNonNull(this.model.get(DBFederationConstants.CONFIG_LASTNAME_COLUMN), "last_name");
 		this.passwordColumn = ObjectUtils.firstNonNull(this.model.get(DBFederationConstants.CONFIG_PASSWORD_COLUMN), "password_hash");
+		
+		this.columnTypes = connection.getColumnTypes(this.usersTable);
+		LOGGER.debugv("  columnTypes: {0}", columnTypes);
+		
+		String mappingConfig = model.get(DBFederationConstants.CONFIG_CUSTOM_ATTRIBUTE_TO_COLUMN_MAPPING);
+		Map<String,String> attributeMapping = new HashMap<>();
+
+		if (mappingConfig != null && !mappingConfig.trim().isEmpty()) {
+			try {
+				List<Pair> pairs = JsonSerialization.readValue(
+					mappingConfig,
+					new com.fasterxml.jackson.core.type.TypeReference<List<Pair>>() {}
+				);
+				for (Pair p : pairs) {
+					if (p != null && p.key != null) attributeMapping.put(p.key, p.value);
+				}
+			} catch (IOException e) {
+				throw new RuntimeException("Failed to parse attribute mapping configuration", e);
+			}
+		}
+		this.attributeMapping = attributeMapping;
+		LOGGER.debugv("  attributeMapping: {0}", attributeMapping);
+
 		this.reader = (ResultSet rs) -> {
 			Set<String> columns = new HashSet<>();
 			ResultSetMetaData metadata = rs.getMetaData();
@@ -72,6 +110,18 @@ public class DatabaseUserRepository {
 			if (columns.contains(passwordColumn)) {
 				user.setPasswordHash(rs.getString(passwordColumn));
 			}
+			
+			Map<String, String> attributes = new HashMap<>();
+			for (Map.Entry<String, String> entry : attributeMapping.entrySet()) {
+				String attributeName = entry.getKey();
+				String columnName = entry.getValue();
+				if (columns.contains(columnName)) {
+					Object value = rs.getObject(columnName);
+					attributes.put(attributeName, value != null ? value.toString() : null);
+				}
+			}
+			user.setAttributes(attributes);
+			
 			return user;
 		};
 	}
@@ -142,13 +192,53 @@ public class DatabaseUserRepository {
 	}
 	
 	public Integer insert(DatabaseUser user) {
-		String sql = "insert into " + usersTable + " (" + usernameColumn + ", " + emailColumn + ", " + firstNameColumn + ", " + lastNameColumn + ", " + passwordColumn + ") values (?, ?, ?, ?, ?)";
+		List<String> columns = new ArrayList<>();
+		List<String> values = new ArrayList<>();
+
+		columns.add(usernameColumn);
+		values.add("?");
+		
+		columns.add(emailColumn);
+		values.add("?");
+		
+		columns.add(firstNameColumn);
+		values.add("?");
+		
+		columns.add(lastNameColumn);
+		values.add("?");
+		
+		columns.add(passwordColumn);
+		values.add("?");
+		
+		if (user.getAttributes() != null) {
+			for (Map.Entry<String, String> entry : user.getAttributes().entrySet()) {
+				String attributeName = entry.getKey();
+				String attributeValue = entry.getValue();
+				if (attributeMapping.containsKey(attributeName)) {
+					columns.add(attributeMapping.get(attributeName));
+					values.add("?");
+				}
+			}
+		}
+
+		String sql = "insert into " + usersTable + " (" + String.join(", ", columns) + ") values (" + String.join(", ", values) + ")";
 		return connection.executeAndReturnGeneratedKeys(sql, (PreparedStatement statement) -> {
-			statement.setString(1, user.getUsername());
-			statement.setString(2, user.getEmail());
-			statement.setString(3, user.getFirstName());
-			statement.setString(4, user.getLastName());
-			statement.setString(5, user.getPasswordHash());
+			int i = 1;
+			statement.setString(i++, user.getUsername());
+			statement.setString(i++, user.getEmail());
+			statement.setString(i++, user.getFirstName());
+			statement.setString(i++, user.getLastName());
+			statement.setString(i++, user.getPasswordHash());
+			
+			if (user.getAttributes() != null) {
+				for (Map.Entry<String, String> entry : user.getAttributes().entrySet()) {
+					String attributeName = entry.getKey();
+					if (attributeMapping.containsKey(attributeName)) {
+						String columnName = attributeMapping.get(attributeName);
+						statement.setObject(i++, convertToTargetType(columnName, entry.getValue()));
+					}
+				}
+			}
 		}, (ResultSet rs) -> {
 			user.setId(rs.getInt(1));
 			return user.getId();
@@ -156,13 +246,40 @@ public class DatabaseUserRepository {
 	}
 	
 	public boolean update(DatabaseUser user) {
-		String sql = "update " + usersTable + " set " + usernameColumn + " = ?, " + emailColumn + " = ?, " + firstNameColumn + " = ?, " + lastNameColumn + "= ? where " + idColumn + " = ?";
+		List<String> sets = new ArrayList<>();
+		sets.add(usernameColumn + " = ?");
+		sets.add(emailColumn + " = ?");
+		sets.add(firstNameColumn + " = ?");
+		sets.add(lastNameColumn + " = ?");
+		
+		if (user.getAttributes() != null) {
+			for (Map.Entry<String, String> entry : user.getAttributes().entrySet()) {
+				String attributeName = entry.getKey();
+				if (attributeMapping.containsKey(attributeName)) {
+					sets.add(attributeMapping.get(attributeName) + " = ?");
+				}
+			}
+		}
+		
+		String sql = "update " + usersTable + " set " + String.join(", ", sets) + " where " + idColumn + " = ?";
 		return connection.execute(sql, (PreparedStatement statement) -> {
-			statement.setString(1, user.getUsername());
-			statement.setString(2, user.getEmail());
-			statement.setString(3, user.getFirstName());
-			statement.setString(4, user.getLastName());
-			statement.setInt(5, user.getId());
+			int i = 1;
+			statement.setString(i++, user.getUsername());
+			statement.setString(i++, user.getEmail());
+			statement.setString(i++, user.getFirstName());
+			statement.setString(i++, user.getLastName());
+			
+			if (user.getAttributes() != null) {
+				for (Map.Entry<String, String> entry : user.getAttributes().entrySet()) {
+					String attributeName = entry.getKey();
+					if (attributeMapping.containsKey(attributeName)) {
+						String columnName = attributeMapping.get(attributeName);
+						statement.setObject(i++, convertToTargetType(columnName, entry.getValue()));
+					}
+				}
+			}
+			
+			statement.setInt(i++, user.getId());
 		}) > 0;
 	}
 	
@@ -173,10 +290,48 @@ public class DatabaseUserRepository {
 		}) > 0;
 	}
 	
+	
 	// Private Methods
 	
+	private Object convertToTargetType(String columnName, String value) {
+		if (value == null) return null;
+		Integer targetType = columnTypes.get(columnName);
+		if (targetType == null) return value;
+		
+		try {
+			switch (targetType) {
+				case Types.INTEGER:
+				case Types.SMALLINT:
+				case Types.TINYINT:
+					return Integer.valueOf(value);
+				case Types.BIGINT:
+					return Long.valueOf(value);
+				case Types.FLOAT:
+				case Types.REAL:
+					return Float.valueOf(value);
+				case Types.DOUBLE:
+					return Double.valueOf(value);
+				case Types.DECIMAL:
+				case Types.NUMERIC:
+					return new BigDecimal(value);
+				default:
+					return value;
+			}
+		} catch (Exception e) {
+			LOGGER.warnv("Failed to convert value ''{0}'' to type {1} for column {2}", value, targetType, columnName);
+			return value;
+		}
+	}
+	
 	private String getColumns() {
-		String[] columns = new String[] { idColumn, usernameColumn, emailColumn, firstNameColumn, lastNameColumn, passwordColumn };
+		List<String> columns = new ArrayList<>();
+		columns.add(idColumn);
+		columns.add(usernameColumn);
+		columns.add(emailColumn);
+		columns.add(firstNameColumn);
+		columns.add(lastNameColumn);
+		columns.add(passwordColumn);
+		columns.addAll(attributeMapping.values());
 		return String.join(",", columns);
 	}
 

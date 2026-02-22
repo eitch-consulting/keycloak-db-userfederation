@@ -25,11 +25,14 @@ import org.keycloak.models.UserProvider;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
+import org.keycloak.services.ErrorResponse;
 import org.keycloak.storage.UserStoragePrivateUtil;
 import org.keycloak.storage.UserStorageProviderFactory;
 import org.keycloak.storage.UserStorageProviderModel;
 import org.keycloak.storage.user.ImportSynchronization;
 import org.keycloak.storage.user.SynchronizationResult;
+
+import jakarta.ws.rs.core.Response;
 
 public class DBFederationProviderFactory implements UserStorageProviderFactory<DBFederationProvider>, ImportSynchronization {
 	
@@ -111,12 +114,18 @@ public class DBFederationProviderFactory implements UserStorageProviderFactory<D
 				.defaultValue("password")
 				.add()
 			.property()
+				.name(DBFederationConstants.CONFIG_CUSTOM_ATTRIBUTE_TO_COLUMN_MAPPING)
+				.label("user-federation-provider.db.customAttributeToColumnMapping")
+				.helpText("user-federation-provider.db.customAttributeToColumnMappingHelp")
+				.type(ProviderConfigProperty.MAP_TYPE)
+				.add()
+			.property()
 				.name(DBFederationConstants.CONFIG_PASSWORD_HASH_FUNCTION)
 				.label("user-federation-provider.db.passwordHashFunction")
 				.helpText("user-federation-provider.db.passwordHashFunctionHelp")
 				.type(ProviderConfigProperty.LIST_TYPE)
 				.defaultValue(PasswordHashFunction.BCRYPT.getId())
-				.options(PasswordHashFunction.ids().toArray(String[]::new))
+				.options(PasswordHashFunction.ids().toArray(new String[] {}))
 				.add()
 			.property()
 				.name(DBFederationConstants.CONFIG_DIGEST_SALT)
@@ -236,7 +245,7 @@ public class DBFederationProviderFactory implements UserStorageProviderFactory<D
 			databaseUsers = userRepository.listUsers();
 		} catch (Exception e) {
 			LOGGER.error("Error listing users from database", e);
-			throw e;
+			throw ErrorResponse.error("DB federation sync failed: " + e.getMessage(), Response.Status.BAD_REQUEST);
 		}
 			
         for (DatabaseUser user : databaseUsers) {
@@ -257,12 +266,10 @@ public class DBFederationProviderFactory implements UserStorageProviderFactory<D
 		        	} else {
 		        		local = userProvider.addUser(realm, user.getUsername());
 				        local.setFederationLink(model.getId());
-				        local.setEmail(user.getEmail());
-				        local.setFirstName(user.getFirstName());
-				        local.setLastName(user.getLastName());
 				        local.setEnabled(true);
 				        local.setEmailVerified(true);
 				        local.setSingleAttribute(DBFederationConstants.ATTRIBUTE_DATABASE_ID, user.getId().toString());
+				        user.syncToUserModel(local);
 				        result.increaseAdded();
 		        	}
 		    	});

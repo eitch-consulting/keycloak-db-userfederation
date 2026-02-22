@@ -8,7 +8,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.sql.DatabaseMetaData;
 
 import org.kewt.databaseprovider.database.callbacks.QueryPreparer;
 import org.kewt.databaseprovider.database.callbacks.QueryReader;
@@ -158,6 +161,35 @@ public class DatabaseConnection implements Closeable {
 		}
 	}
 	
+	public Map<String, Integer> getColumnTypes(String tableName) {
+		Map<String, Integer> types = new HashMap<>();
+		try {
+			DatabaseMetaData md = connection.getMetaData();
+			try (ResultSet rs = md.getColumns(null, null, tableName, null)) {
+				while (rs.next()) {
+					types.put(rs.getString("COLUMN_NAME"), rs.getInt("DATA_TYPE"));
+				}
+			}
+			if (types.isEmpty()) {
+				try (ResultSet rs = md.getColumns(null, null, tableName.toUpperCase(), null)) {
+					while (rs.next()) {
+						types.put(rs.getString("COLUMN_NAME"), rs.getInt("DATA_TYPE"));
+					}
+				}
+			}
+			if (types.isEmpty()) {
+				try (ResultSet rs = md.getColumns(null, null, tableName.toLowerCase(), null)) {
+					while (rs.next()) {
+						types.put(rs.getString("COLUMN_NAME"), rs.getInt("DATA_TYPE"));
+					}
+				}
+			}
+		} catch (SQLException e) {
+			throw new DatabaseException("Failed to fetch column types for " + tableName, e);
+		}
+		return types;
+	}
+
 	@Override
 	public void close() {
 		try {

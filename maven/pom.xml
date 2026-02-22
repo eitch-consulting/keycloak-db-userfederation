@@ -5,14 +5,13 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>org.kewt</groupId>
 	<artifactId>keycloak-db-userfederation</artifactId>
-	<version>1.0.1</version>
+	<version>1.0.2</version>
 	<name>Keycloak DB User Federation</name>
 	<url>http://maven.apache.org</url>
 	
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<maven.compiler.source>1.8</maven.compiler.source>
-		<maven.compiler.target>1.8</maven.compiler.target>
+		<maven.compiler.release>8</maven.compiler.release>
 		<lombok.version>1.18.22</lombok.version>
 		<jboss-logging.version>3.3.1.Final</jboss-logging.version>
 		<keycloak.version>22.0.0</keycloak.version>
@@ -76,6 +75,15 @@
 	<build>
 		<finalName>keycloak-db-userfederation-${project.version}</finalName>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.13.0</version>
+				<configuration>
+					<release>${maven.compiler.release}</release>
+					<showWarnings>true</showWarnings>
+				</configuration>
+			</plugin>
 			<plugin>
 				<artifactId>maven-dependency-plugin</artifactId>
 				<executions>

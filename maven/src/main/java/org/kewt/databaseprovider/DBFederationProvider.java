@@ -359,7 +359,7 @@ public class DBFederationProvider
     
     protected WritableUserDelegate createWritableDelegate(UserModel local, DatabaseUser databaseUser) {
     	LOGGER.debugv("createWritableDelegate: {0} {1}", local, databaseUser);
-    	WritableUserDelegate delegate = new WritableUserDelegate(local, databaseUser);
+    	WritableUserDelegate delegate = new WritableUserDelegate(local, databaseUser, model);
     	delegates.add(delegate);
     	return delegate;
     }

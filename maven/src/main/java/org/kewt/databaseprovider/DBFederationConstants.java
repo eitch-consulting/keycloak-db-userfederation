@@ -24,6 +24,8 @@ public class DBFederationConstants {
 	public static final String CONFIG_LASTNAME_COLUMN = "lastname_column";
 	
 	public static final String CONFIG_PASSWORD_COLUMN = "password_column";
+
+	public static final String CONFIG_CUSTOM_ATTRIBUTE_TO_COLUMN_MAPPING = "custom_attribute_to_column_mapping";
 	
 	public static final String CONFIG_PASSWORD_HASH_FUNCTION = "password_hash_function";
 	

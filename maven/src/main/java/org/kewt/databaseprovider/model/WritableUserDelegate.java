@@ -1,10 +1,21 @@
 package org.kewt.databaseprovider.model;
 
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 
 import org.jboss.logging.Logger;
+import org.kewt.databaseprovider.DBFederationConstants;
+import org.kewt.databaseprovider.utils.Pair;
+import org.keycloak.component.ComponentModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.UserModelDelegate;
+import org.keycloak.util.JsonSerialization;
+
+import com.fasterxml.jackson.core.type.TypeReference;
 
 public class WritableUserDelegate extends UserModelDelegate {
 
@@ -14,13 +25,32 @@ public class WritableUserDelegate extends UserModelDelegate {
 	
 	protected boolean dirty;
 	
-	public WritableUserDelegate(UserModel delegate, DatabaseUser databaseUser) {
+	protected Map<String, String> attributeMapping;
+	
+	public WritableUserDelegate(UserModel delegate, DatabaseUser databaseUser, ComponentModel model) {
 		super(delegate);
 		this.databaseUser = databaseUser;
+		
+		String mappingConfig = model.get(DBFederationConstants.CONFIG_CUSTOM_ATTRIBUTE_TO_COLUMN_MAPPING);
+		Map<String,String> attributeMapping = new HashMap<>();
+
+		if (mappingConfig != null && !mappingConfig.trim().isEmpty()) {
+			try {
+				TypeReference<List<Pair>> type = new com.fasterxml.jackson.core.type.TypeReference<List<Pair>>() {};
+				List<Pair> pairs = JsonSerialization.readValue(mappingConfig, type);
+				for (Pair p : pairs) {
+					if (p != null && p.key != null) attributeMapping.put(p.key, p.value);
+				}
+			} catch (IOException e) {
+				throw new RuntimeException("Failed to parse attribute mapping configuration", e);
+			}
+		}
+		this.attributeMapping = attributeMapping;
 	}
 	
 	@Override
 	public void setUsername(String username) {
+		if (Objects.equals(getUsername(), username)) return;
 		LOGGER.debugv("  setUsername: {0}", username);
 		super.setUsername(username);
 		databaseUser.setUsername(username);
@@ -29,6 +59,7 @@ public class WritableUserDelegate extends UserModelDelegate {
 	
 	@Override
 	public void setEmail(String email) {
+		if (Objects.equals(getEmail(), email)) return;
 		LOGGER.debugv("  setEmail: {0}", email);
 		super.setEmail(email);
 		databaseUser.setEmail(email);
@@ -37,6 +68,7 @@ public class WritableUserDelegate extends UserModelDelegate {
 	
 	@Override
 	public void setFirstName(String firstName) {
+		if (Objects.equals(getFirstName(), firstName)) return;
 		LOGGER.debugv("  setFirstName: {0}", firstName);
 		super.setFirstName(firstName);
 		databaseUser.setFirstName(firstName);
@@ -45,6 +77,7 @@ public class WritableUserDelegate extends UserModelDelegate {
 	
 	@Override
 	public void setLastName(String lastName) {
+		if (Objects.equals(getLastName(), lastName)) return;
 		LOGGER.debugv("  setLastName: {0}", lastName);
 		super.setLastName(lastName);
 		databaseUser.setLastName(lastName);
@@ -53,40 +86,63 @@ public class WritableUserDelegate extends UserModelDelegate {
 	
 	@Override
 	public void setAttribute(String name, List<String> values) {
+		if (Objects.equals(getAttributeStream(name).collect(Collectors.toList()), values)) return;
 		LOGGER.debugv("  setAttribute: {0}, {1}", name, values);
-		switch (name) {
-			case "email":
-				setEmail(values.get(0));
-				break;
-			case "firstName":
-				setFirstName(values.get(0));
-				break;
-			case "lastName":
-				setLastName(values.get(0));
-				break;
-			default:
-				super.setAttribute(name, values);
-				break;
+		String value = values != null && !values.isEmpty() ? values.get(0) : null;
+		
+		if (attributeMapping.containsKey(name)) {
+			updateAttribute(name, value);
+		} else {
+			switch (name) {
+				case "email":
+					setEmail(value);
+					break;
+				case "firstName":
+					setFirstName(value);
+					break;
+				case "lastName":
+					setLastName(value);
+					break;
+				default:
+					super.setAttribute(name, values);
+					break;
+			}
 		}
 	}
 	
 	@Override
 	public void setSingleAttribute(String name, String value) {
+		if (Objects.equals(getFirstAttribute(name), value)) return;
 		LOGGER.debugv("  setSingleAttribute: {0}, {1}", name, value);
-		switch (name) {
-			case "email":
-				setEmail(value);
-				break;
-			case "firstName":
-				setFirstName(value);
-				break;
-			case "lastName":
-				setLastName(value);
-				break;
-			default:
-				super.setSingleAttribute(name, value);
-				break;
+		
+		if (attributeMapping.containsKey(name)) {
+			updateAttribute(name, value);
+		} else {
+			switch (name) {
+				case "email":
+					setEmail(value);
+					break;
+				case "firstName":
+					setFirstName(value);
+					break;
+				case "lastName":
+					setLastName(value);
+					break;
+				default:
+					super.setSingleAttribute(name, value);
+					break;
+			}
 		}
+	}
+	
+	private void updateAttribute(String name, String value) {
+		Map<String, String> attributes = databaseUser.getAttributes();
+		if (attributes == null) {
+			attributes = new HashMap<>();
+		}
+		attributes.put(name, value);
+		databaseUser.setAttributes(attributes);
+		dirty = true;
 	}
 	
 	public boolean isDirty() {

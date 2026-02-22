@@ -1,10 +1,14 @@
 package org.kewt.databaseprovider.model;
 
+import java.util.Map;
 import java.util.Objects;
 
+import org.jboss.logging.Logger;
 import org.keycloak.models.UserModel;
 
 public class DatabaseUser {
+
+	protected static final Logger LOGGER = Logger.getLogger(DatabaseUser.class);
 	
 	private Integer id;
 	
@@ -17,6 +21,8 @@ public class DatabaseUser {
 	private String firstName;
 	
 	private String lastName;
+	
+	private Map<String, String> attributes;
 
 	public Integer getId() {
 		return id;
@@ -65,18 +71,41 @@ public class DatabaseUser {
 	public void setLastName(String lastName) {
 		this.lastName = lastName;
 	}
+
+	public Map<String, String> getAttributes() {
+		return attributes;
+	}
+
+	public void setAttributes(Map<String, String> attributes) {
+		this.attributes = attributes;
+	}
 	
 	@Override
 	public String toString() {
-		return "DatabaseUser[username="+ username + ",email=" + email + ",firstName=" + firstName + ",lastName=" + lastName + "]";
+		return "DatabaseUser[username="+ username + ",email=" + email + ",firstName=" + firstName + ",lastName=" + lastName + ",attributes=" + attributes + "]";
 	}
 	
 	public boolean outOfSync(UserModel user) {
-		return
-			!(Objects.equals(username, user.getUsername())) ||
+		if (!(Objects.equals(username, user.getUsername())) ||
 			!(Objects.equals(email, user.getEmail())) ||
 			!(Objects.equals(firstName, user.getFirstName())) ||
-			!(Objects.equals(lastName, user.getLastName()));
+			!(Objects.equals(lastName, user.getLastName()))) {
+			return true;
+		}
+		
+		if (attributes != null) {
+			for (Map.Entry<String, String> entry : attributes.entrySet()) {
+				String attrName = entry.getKey();
+				String attrValue = entry.getValue();
+				String localValue = user.getFirstAttribute(attrName);
+				if (!Objects.equals(attrValue, localValue)) {
+					LOGGER.debugv("  outOfSync: attrName ''{0}'', attrValue ''{1}'', localValue ''{2}''", attrName, attrValue, localValue);
+					return true;
+				}
+			}
+		}
+		
+		return false;
 	}
 	
 	public void syncToUserModel(UserModel user) {
@@ -84,6 +113,14 @@ public class DatabaseUser {
 		user.setEmail(this.email);
 		user.setFirstName(this.firstName);
 		user.setLastName(this.lastName);
+		
+		if (attributes != null) {
+			for (Map.Entry<String, String> entry : attributes.entrySet()) {
+				String attrName = entry.getKey();
+				String attrValue = entry.getValue();
+				user.setSingleAttribute(attrName, attrValue);
+			}
+		}
 	}
 
 }
