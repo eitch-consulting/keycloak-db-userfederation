@@ -1,11 +1,10 @@
 package org.kewt.databaseprovider.repository;
 
-import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.Types;
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -19,9 +18,8 @@ import org.kewt.databaseprovider.DBFederationConstants;
 import org.kewt.databaseprovider.database.DatabaseConnection;
 import org.kewt.databaseprovider.database.callbacks.QueryReader;
 import org.kewt.databaseprovider.model.DatabaseUser;
-import org.kewt.databaseprovider.utils.Pair;
+import org.kewt.databaseprovider.utils.ConfigUtil;
 import org.keycloak.component.ComponentModel;
-import org.keycloak.util.JsonSerialization;
 
 public class DatabaseUserRepository {
 
@@ -65,23 +63,7 @@ public class DatabaseUserRepository {
 		this.columnTypes = connection.getColumnTypes(this.usersTable);
 		LOGGER.debugv("  columnTypes: {0}", columnTypes);
 		
-		String mappingConfig = model.get(DBFederationConstants.CONFIG_CUSTOM_ATTRIBUTE_TO_COLUMN_MAPPING);
-		Map<String,String> attributeMapping = new HashMap<>();
-
-		if (mappingConfig != null && !mappingConfig.trim().isEmpty()) {
-			try {
-				List<Pair> pairs = JsonSerialization.readValue(
-					mappingConfig,
-					new com.fasterxml.jackson.core.type.TypeReference<List<Pair>>() {}
-				);
-				for (Pair p : pairs) {
-					if (p != null && p.key != null) attributeMapping.put(p.key, p.value);
-				}
-			} catch (IOException e) {
-				throw new RuntimeException("Failed to parse attribute mapping configuration", e);
-			}
-		}
-		this.attributeMapping = attributeMapping;
+		this.attributeMapping = ConfigUtil.getCustomAttributeMapping(model);
 		LOGGER.debugv("  attributeMapping: {0}", attributeMapping);
 
 		this.reader = (ResultSet rs) -> {

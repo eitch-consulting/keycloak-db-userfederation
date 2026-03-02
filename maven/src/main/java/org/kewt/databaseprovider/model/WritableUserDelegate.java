@@ -1,21 +1,16 @@
 package org.kewt.databaseprovider.model;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.List;
 
 import org.jboss.logging.Logger;
-import org.kewt.databaseprovider.DBFederationConstants;
-import org.kewt.databaseprovider.utils.Pair;
+import org.kewt.databaseprovider.utils.ConfigUtil;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.UserModelDelegate;
-import org.keycloak.util.JsonSerialization;
-
-import com.fasterxml.jackson.core.type.TypeReference;
 
 public class WritableUserDelegate extends UserModelDelegate {
 
@@ -30,22 +25,7 @@ public class WritableUserDelegate extends UserModelDelegate {
 	public WritableUserDelegate(UserModel delegate, DatabaseUser databaseUser, ComponentModel model) {
 		super(delegate);
 		this.databaseUser = databaseUser;
-		
-		String mappingConfig = model.get(DBFederationConstants.CONFIG_CUSTOM_ATTRIBUTE_TO_COLUMN_MAPPING);
-		Map<String,String> attributeMapping = new HashMap<>();
-
-		if (mappingConfig != null && !mappingConfig.trim().isEmpty()) {
-			try {
-				TypeReference<List<Pair>> type = new com.fasterxml.jackson.core.type.TypeReference<List<Pair>>() {};
-				List<Pair> pairs = JsonSerialization.readValue(mappingConfig, type);
-				for (Pair p : pairs) {
-					if (p != null && p.key != null) attributeMapping.put(p.key, p.value);
-				}
-			} catch (IOException e) {
-				throw new RuntimeException("Failed to parse attribute mapping configuration", e);
-			}
-		}
-		this.attributeMapping = attributeMapping;
+		this.attributeMapping = ConfigUtil.getCustomAttributeMapping(model);
 	}
 	
 	@Override

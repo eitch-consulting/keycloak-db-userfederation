@@ -117,7 +117,7 @@ public class DBFederationProviderFactory implements UserStorageProviderFactory<D
 				.name(DBFederationConstants.CONFIG_CUSTOM_ATTRIBUTE_TO_COLUMN_MAPPING)
 				.label("user-federation-provider.db.customAttributeToColumnMapping")
 				.helpText("user-federation-provider.db.customAttributeToColumnMappingHelp")
-				.type(ProviderConfigProperty.MAP_TYPE)
+				.type(ProviderConfigProperty.MULTIVALUED_STRING_TYPE)
 				.add()
 			.property()
 				.name(DBFederationConstants.CONFIG_PASSWORD_HASH_FUNCTION)
